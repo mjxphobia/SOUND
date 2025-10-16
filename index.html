@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Bamboo Playground</title>
+<style>
+  :root{
+    --bg:#0f2e1c;        
+    --bg2:#163b24;
+    --line:#1f6f3b;
+    --glow:#4ade80;
+    --text:#eafff0;
+    --accent:#2ecc71;
+  }
+  html,body{height:100%;margin:0;}
+  body{
+    display:grid; place-items:center;
+    background: radial-gradient(circle at 20% 20%, var(--bg2), var(--bg));
+    color:var(--text);
+    font-family:system-ui, "Noto Sans KR", sans-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* 상단 문구 */
+  .message {
+    position: fixed;
+    top: 12px;
+    width: 100%;
+    text-align: center;
+    color: #b9f0c5;
+    font-weight: 600;
+    font-size: clamp(14px, 3.5vmin, 18px);
+    letter-spacing: 0.5px;
+    pointer-events: none;
+  }
+
+  /* 직사각형 게임 박스 */
+  .arena{
+    width:min(92vw, 860px);
+    aspect-ratio: 16 / 9;
+    max-height:74vh;
+    position:relative; overflow:hidden;
+    background: radial-gradient(180px 80px at 20% 15%, #0c2416, transparent 70%),
+                radial-gradient(200px 90px at 80% 85%, #0c2416, transparent 70%),
+                linear-gradient(135deg,#0f2e1c 0%,#113a23 100%);
+    border:2px solid var(--line);
+    box-shadow:
+      0 0 0 6px rgba(42, 110, 67, .25) inset,
+      0 8px 30px rgba(0,0,0,.45),
+      0 0 40px 4px rgba(74, 222, 128, .15);
+    border-radius:18px;
+  }
+
+  .sprite{
+    position:absolute; font-size: clamp(28px, 5vmin, 44px);
+    filter: drop-shadow(0 6px 10px rgba(0,0,0,.45));
+    cursor:pointer; user-select:none;
+    will-change: transform;
+    transition: transform .06s;
+  }
+  .sprite:active{ transform: scale(.92) }
+
+  .detail{
+    width:min(92vw, 860px);
+    max-width:860px;
+    padding:22px 20px;
+    border:2px solid var(--line);
+    border-radius:18px;
+    background: linear-gradient(180deg, #102c1b 0%, #0d2416 100%);
+    box-shadow:
+      0 0 0 6px rgba(42, 110, 67, .25) inset,
+      0 8px 30px rgba(0,0,0,.45),
+      0 0 40px 4px rgba(74, 222, 128, .15);
+    text-align:center;
+  }
+  .title{ margin:0 0 6px; font-size:clamp(20px, 4.8vmin, 32px); font-weight:900; color:#d9ffe7 }
+  .desc{ margin:0 0 18px; color:#b6e9c8 }
+  .btn{
+    display:inline-block; padding:10px 16px; border-radius:12px; text-decoration:none;
+    color:#0b1e14; font-weight:800; background:var(--accent);
+    border:2px solid #0e3a23; box-shadow:0 3px 0 rgba(0,0,0,.35);
+  }
+  audio{ width: min(92vw, 600px); margin-top:8px; filter: drop-shadow(0 6px 10px rgba(0,0,0,.35)); }
+  .hide{ display:none }
+</style>
+</head>
+<body>
+
+<div class="message"><br><br><br><br><br><br><br><br><br>어떤 소리지?</div>
+
+<div id="screen-play" class="arena"></div>
+
+<section id="screen-detail" class="detail hide">
+  <h1 class="title" id="d-title">제목</h1>
+  <p class="desc" id="d-text">이모지를 눌렀을 때 나오는 설명 문구</p>
+  <audio id="d-audio" controls preload="none" src=""></audio>
+  <div style="margin-top:16px">
+    <a href="#" class="btn" id="btn-back">돌아가기</a>
+  </div>
+</section>
+
+<script>
+const EMOJIS = [
+  { char: "😸", label: "CAT", text: "자세히 들어보니 무언가 들린다...", audio: "static/cat.mp3" },
+  { char: "🐼", label: "PANDA", text: "자세히 들어보니 무언가 들린다...", audio: "static/panda.mp3" },
+  { char: "🎁", label: "PRESENT", text: "자세히 들어보니 무언가 들린다...", audio: "static/present.mp3" },
+  { char: "💢", label: "ANGER", text: "자세히 들어보니 무언가 들린다...", audio: "static/anger.mp3" },
+  { char: "💚", label: "OUR HEART", text: "자세히 들어보니 무언가 들린다...", audio: "static/ourheart.mp3" },
+];
+
+const arena  = document.getElementById('screen-play');
+const detail = document.getElementById('screen-detail');
+const dTitle = document.getElementById('d-title');
+const dText  = document.getElementById('d-text');
+const dAudio = document.getElementById('d-audio');
+const btnBack= document.getElementById('btn-back');
+
+let sprites = [];
+let bodies  = [];
+let rafId   = null;
+let baseSpeed = 200;   // 🌱 기본 속도 (전체 속도 조절용)
+let speedScale = 1;    // 🚀 시간 지날수록 가속될 배율
+let elapsed = 0;       // 지난 시간
+
+function box(){ return arena.getBoundingClientRect(); }
+const rand = (min,max)=> Math.random()*(max-min)+min;
+
+function addSprites(){
+  arena.innerHTML = "";
+  sprites = [];
+  bodies  = [];
+  EMOJIS.forEach((item, idx)=>{
+    const el = document.createElement('div');
+    el.className = 'sprite';
+    el.textContent = item.char;
+    el.setAttribute('data-idx', idx);
+    arena.appendChild(el);
+    sprites.push(el);
+
+    const r = box();
+    const w = el.getBoundingClientRect().width || 40;
+    const h = w;
+    const margin = 10;
+    const x = rand(margin, r.width  - w - margin);
+    const y = rand(margin, r.height - h - margin);
+    let vx = rand(-baseSpeed, baseSpeed);
+    let vy = rand(-baseSpeed, baseSpeed);
+    if (Math.abs(vx) < baseSpeed/2) vx = vx < 0 ? -baseSpeed/2 : baseSpeed/2;
+    if (Math.abs(vy) < baseSpeed/2) vy = vy < 0 ? -baseSpeed/2 : baseSpeed/2;
+    bodies.push({x,y,vx,vy,w,h});
+    el.style.transform = `translate(${x}px, ${y}px)`;
+    el.addEventListener('click', () => openDetail(idx));
+  });
+}
+
+let lastTs = performance.now();
+function tick(ts){
+  const dt = (ts - lastTs)/1000;
+  lastTs = ts;
+  elapsed += dt;
+
+  // 일정 시간마다 점점 가속
+  speedScale = 1 + elapsed * 0.1; // 1초마다 10%씩 빨라짐
+  const r = box();
+  for(let i=0;i<bodies.length;i++){
+    const b = bodies[i], el = sprites[i];
+    b.x += b.vx * dt * speedScale;
+    b.y += b.vy * dt * speedScale;
+    if(b.x <= 0){ b.x = 0; b.vx *= -1; }
+    if(b.y <= 0){ b.y = 0; b.vy *= -1; }
+    if(b.x + b.w >= r.width){ b.x = r.width - b.w; b.vx *= -1; }
+    if(b.y + b.h >= r.height){ b.y = r.height - b.h; b.vy *= -1; }
+    el.style.transform = `translate(${b.x}px, ${b.y}px)`;
+  }
+  rafId = requestAnimationFrame(tick);
+}
+
+function openDetail(idx){
+  const item = EMOJIS[idx];
+  dTitle.textContent = item.label;
+  dText.textContent  = item.text;
+  dAudio.src = item.audio;
+  dAudio.currentTime = 0;
+  arena.classList.add('hide');
+  detail.classList.remove('hide');
+  dAudio.play().catch(()=>{});
+}
+
+btnBack.addEventListener('click', (e)=>{
+  e.preventDefault();
+  dAudio.pause();
+  detail.classList.add('hide');
+  arena.classList.remove('hide');
+});
+
+addSprites();
+lastTs = performance.now();
+rafId = requestAnimationFrame(tick);
+</script>
+</body>
+</html>
